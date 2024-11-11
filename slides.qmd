@@ -140,14 +140,17 @@ print(iron[13])
 ```
 
 ```{python}
-# | echo: false
+# | echo: true
 # | fig-align: center
+# | output-location: column-fragment
 with quantity_support():
   for ion in iron:
       ioneq = iron.equilibrium_ionization[:, ion.charge_state]
       imax = np.argmax(ioneq)
       plt.plot(iron.temperature, ioneq)
-      plt.text(iron.temperature[imax], ioneq[imax], ion.ionization_stage_roman,
+      plt.text(iron.temperature[imax],
+               ioneq[imax],
+               ion.ionization_stage_roman,
                horizontalalignment='center')
   plt.xscale('log')
   plt.title(f'{iron.atomic_symbol} Equilibrium Ionization')
