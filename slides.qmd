@@ -1,65 +1,199 @@
 ---
-title: An Example SunPy Presentation
-subtitle: Conference / Location / Date
+title: "fiasco: A Python Interface to the CHIANTI Atomic Database"
+subtitle: PyHC Fall Meeting / Boulder, CO / 11 November 2024
 authors:
-- A. Speaker
-- B. Presenter
-- The SunPy Project
+- Will Barnes
 institute:
-- Example University
-- NASA
+- American University/NASA GSFC
 format:
   revealjs:
     margin: 0
     width: 100%
     height: 100%
     theme: [default, theme/sunpy-theme.scss]
-    logo: static/sunpy_logo_landscape.svg
-    footer: "[wtbarnes.github.io/sunpy-presentation-template](https://wtbarnes.github.io/sunpy-presentation-template)"
+    logo: static/fiasco-logo.png
+    footer: "[wtbarnes.github.io/pyhc-fall-2024-fiasco-talk](https://wtbarnes.github.io/pyhc-fall-2024-fiasco-talk)"
 title-slide-attributes: 
-  data-background-image: static/sunpy_icon.svg
-  data-background-position: -100% 50%
-  data-background-opacity: 50%
-  data-background-size: 80%
+  data-background-image: static/fiasco-logo.png
+  data-background-position: 0% 50%
+  data-background-opacity: 60%
+  data-background-size: 40%
 ---
 ```{python}
 #| echo: false
 #| eval: true
 import os
 os.environ["PARFIVE_HIDE_PROGRESS"] = "True"
+from astropy.visualization import quantity_support
 ```
 
-# The `sunpy` Package
-
----
-
-![](static/tour.svg){height="750"}
-
-## The package includes...
-
-- Data search and retrieval
-- Data structures for timeseries and image data
-- Coordinate frames and conversions
-- and much more!
-
-## Another slide with a plot inline
+## Corona emits at many temperatures...
 
 ```{python}
 #| fig-align: center
+import astropy.units as u
 import sunpy.map
 import sunpy.data.sample
+import matplotlib.pyplot as plt
+import numpy as np
 
-m = sunpy.map.Map(sunpy.data.sample.AIA_171_IMAGE)
-m.peek()
+m = sunpy.map.Map(sunpy.data.sample.AIA_211_IMAGE)
+
+fig = plt.figure(figsize=(9,9))
+ax = fig.add_subplot(projection=m)
+m.plot(axes=ax, clip_interval=(1,99.9)*u.percent);
+ax.text(50,1000,'2 MK',va='top', ha='left', color='w', fontsize=20);
 ```
 
-## You can also include code
+## ...but how do we know this? {background-image="static/odwyer-aia211-response.png" background-size="60%"}
 
-The code below shows how to create a coordinate in the same frame as the map shown before.
+<img src="static/odwyer-aia211-response.png">
+
+## The CHIANTI Atomic Database
+
+:::: {.columns}
+::: {.column width="50%"}
+- Grew out of efforts in early 90s to make atomic data and software **freely and publicly available**
+- Data + software--released through SSW or standalone, always tightly coupled
+- **v1.0 released in 1996**, v11 in 2024
+- Database consists of large (~1.5 GB) collection of **plain text files**
+- **Software written in IDL**--parses database, computes derived quantities, GUI
+- Lacking: automated tests, open development, backwards compatibility
+- ChiantiPy developed since ~2006
+:::
+::: {.column width="50%"}
+![](static/chianti_team.png)
+:::
+::::
+
+## The `fiasco` Python Package
+
+- Started around 2017 as a solo graduate student project
+- First release (v0.1) not until January 2023
+- v0.3 released in September of this year [![PyPI](https://img.shields.io/pypi/v/fiasco.svg)](https://pypi.python.org/pypi)
+- Inspired by object-oriented design of `ChiantiPy`
+- Developed openly on **GitHub** [![fiasco CI status](https://github.com/wtbarnes/fiasco/actions/workflows/ci.yml/badge.svg)](https://github.com/wtbarnes/fiasco/actions/workflows/ci.yml)
+- Automated testing on **GitHub Actions** (using OA templates)
+[![codecov](https://codecov.io/gh/wtbarnes/fiasco/branch/main/graph/badge.svg?token=damCmTyRUN)](https://codecov.io/gh/wtbarnes/fiasco) 
+- Documentation hosted on **Read the Docs** 
+- Uses `astropy.units` everywhere--inputs and outputs
+- Uses `plasmapy.particles` for parsing ion/element labeling
+- Plain text database files parsed into **single HDF5 database**
+- *Why fiasco?* Style of bottle used to serve chianti wine
+
+## The building block of `fiasco`
+
+- Database organized around *ions*, e.g. Fe XIV == iron ion with 13 electrons removed
+- Abstract away details of how the database is organized
+
 ```{python}
 # | echo: true
-import astropy.coordinates
+# | output-location: column-fragment
+import fiasco
 import astropy.units as u
-my_coord = astropy.coordinates.SkyCoord(Tx=300*u.arcsec, Ty=500*u.arcsec, frame=m.coordinate_frame)
-print(my_coord)
+temperature = 10**np.arange(4,8,0.01)*u.K
+fe_14 = fiasco.Ion('Fe XIV', temperature)
+fe_14
 ```
+
+```{python}
+# | echo: true
+# | output-location: column-fragment
+print(fe_14.ion_name_roman)
+print(fe_14.element_name)
+print(fe_14.ip.to('eV'))
+print(fe_14.abundance)
+```
+
+```{python}
+# | echo: true
+# | output-location: column-fragment
+fe_14[0]
+```
+## Computing Derived Quantities
+
+```{python }
+# | echo: true
+# | output-location: fragment
+# | fig-align: center
+# | code-line-numbers: "|2,5"
+with quantity_support():
+  plt.plot(fe_14.temperature, fe_14.ionization_rate, color='C0')
+  plt.plot(fe_14.temperature, fe_14.direct_ionization_rate, color='C0', ls='--')
+  plt.plot(fe_14.temperature, fe_14.excitation_autoionization_rate, color='C0', ls=':')
+  plt.plot(fe_14.temperature, fe_14.recombination_rate, color='C1')
+  plt.plot(fe_14.temperature, fe_14.dielectronic_recombination_rate, color='C1', ls='--')
+  plt.plot(fe_14.temperature, fe_14.radiative_recombination_rate, color='C1', ls=':')
+  plt.xscale('log')
+  plt.yscale('log')
+  plt.ylim(1e-13,1e-8)
+```
+
+## Combining `Ion` objects together
+
+```{python}
+# | echo: true
+# | output-location: column-fragment
+iron = fiasco.Element('iron', temperature)
+print(iron)
+print(iron[13])
+```
+
+```{python}
+# | echo: false
+# | fig-align: center
+with quantity_support():
+  for ion in iron:
+      ioneq = iron.equilibrium_ionization[:, ion.charge_state]
+      imax = np.argmax(ioneq)
+      plt.plot(iron.temperature, ioneq)
+      plt.text(iron.temperature[imax], ioneq[imax], ion.ionization_stage_roman,
+               horizontalalignment='center')
+  plt.xscale('log')
+  plt.title(f'{iron.atomic_symbol} Equilibrium Ionization')
+```
+
+## Combining `Ion` objects together
+
+```{python}
+# | echo: true
+# | output-location: column-fragment
+fe_18 = fiasco.Ion('Fe XVIII', temperature)
+o_6 = fiasco.Ion('O VI', temperature)
+col = fe_18 + o_6
+col
+```
+
+```{python}
+# | echo: true
+# | output-location: column-fragment
+# | fig-align: center
+density = 1e9*u.cm**(-3)
+with quantity_support():
+  plt.plot(temperature, col[:1].radiative_loss(density))
+  plt.plot(temperature, col.radiative_loss(density))
+  plt.yscale('log')
+  plt.xscale('log')
+  plt.ylim(1e-30, 1e-20)
+```
+
+## Progress since PyHC 2018
+
+:::: {.columns}
+::: {.column width="75%"}
+- **Stability**--releases now on PyPI
+- **More features!**
+  - Continuum calculations--free-free, free-bound, two-photon
+  - Support for new data formats using in v9 and v10
+- Systematic comparisons to existing IDL functionality
+- **Higher quality documentation**--more examples, more narrative
+- **Growing contributor community**
+- Formally associated with the CHIANTI team
+- Dedicated funding source--ISFM program at GSFC
+- **Future:** support for v9, v10 of database
+- **Future:** better integration with `plasmapy`
+:::
+::: {.column width="25%"}
+![](static/fiasco-idl-comparison-goft.png)
+:::
+::::
